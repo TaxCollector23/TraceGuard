@@ -1,0 +1,39 @@
+{
+  "name": "traceguard-vscode",
+  "displayName": "TraceGuard",
+  "description": "Lightweight bridge to your local TraceGuard daemon: recent runs, dashboard, and running the current command through trg.",
+  "version": "0.1.0",
+  "publisher": "traceguard",
+  "private": true,
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "traceguard",
+          "title": "TraceGuard",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "traceguard": [{ "id": "traceguard.runs", "name": "Recent Runs" }]
+    },
+    "commands": [
+      { "command": "traceguard.openDashboard", "title": "TraceGuard: Open Dashboard" },
+      { "command": "traceguard.runCommand", "title": "TraceGuard: Run Command through trg" },
+      { "command": "traceguard.refresh", "title": "TraceGuard: Refresh Runs", "icon": "$(refresh)" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "traceguard.refresh", "when": "view == traceguard.runs", "group": "navigation" }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "echo \"Plain JS extension — no build step required.\""
+  }
+}
