@@ -88,18 +88,14 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}
 
-  release:
-    name: publish release
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-      - name: Publish to GitHub Releases
+      # Publish each binary to the Release as soon as it is built. This makes the
+      # release resilient: a single platform stuck waiting for a runner does not
+      # block the others from publishing. softprops upserts the release.
+      - name: Publish asset to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*
+          tag_name: ${{ github.ref_name }}
+          files: dist/${{ matrix.artifact }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
