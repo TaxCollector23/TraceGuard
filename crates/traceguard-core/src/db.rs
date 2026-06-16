@@ -110,14 +110,21 @@ CREATE TABLE IF NOT EXISTS test_results (
 );
 
 CREATE TABLE IF NOT EXISTS prompt_compressions (
-    id               TEXT PRIMARY KEY,
-    run_id           TEXT REFERENCES runs(id),
-    original_tokens  INTEGER NOT NULL,
-    compressed_tokens INTEGER NOT NULL,
-    reduction_pct    REAL NOT NULL,
-    original_prompt  TEXT,
-    final_prompt     TEXT,
-    created_at       TEXT NOT NULL
+    id                          TEXT PRIMARY KEY,
+    run_id                      TEXT REFERENCES runs(id),
+    project_id                  TEXT,
+    mode                        TEXT NOT NULL,
+    original_token_estimate     INTEGER NOT NULL,
+    compressed_token_estimate   INTEGER NOT NULL,
+    estimated_reduction_percent REAL NOT NULL,
+    compressed_prompt_hash      TEXT NOT NULL,
+    original_prompt_stored      INTEGER NOT NULL,
+    compressed_prompt_stored    INTEGER NOT NULL,
+    preserved_constraints_json  TEXT,
+    removed_redundancy_json     TEXT,
+    original_prompt             TEXT,
+    compressed_prompt           TEXT,
+    created_at                  TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_project ON runs(project_id);
@@ -136,6 +143,35 @@ pub struct Store {
     conn: Connection,
 }
 
+/// Apply schema migrations that `CREATE TABLE IF NOT EXISTS` cannot express.
+///
+/// The `prompt_compressions` table gained columns for TraceCompress. If an older
+/// database has the legacy shape (no `mode` column), drop and recreate it — the
+/// only data lost is local compression history, which is non-critical.
+fn migrate(conn: &Connection) -> Result<()> {
+    let table_exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='prompt_compressions'",
+            [],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+
+    if table_exists {
+        let has_mode: bool = conn
+            .prepare("PRAGMA table_info(prompt_compressions)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(|r| r.ok())
+            .any(|col| col == "mode");
+        if !has_mode {
+            conn.execute_batch("DROP TABLE prompt_compressions;")
+                .context("dropping legacy prompt_compressions table")?;
+        }
+    }
+    Ok(())
+}
+
 impl Store {
     /// Open (creating if needed) the database at `path` and apply the schema.
     pub fn open(path: &std::path::Path) -> Result<Self> {
@@ -145,6 +181,7 @@ impl Store {
         }
         let conn = Connection::open(path)
             .with_context(|| format!("opening sqlite db {}", path.display()))?;
+        migrate(&conn)?;
         conn.execute_batch(SCHEMA).context("applying schema")?;
         Ok(Store { conn })
     }
@@ -152,6 +189,7 @@ impl Store {
     /// Open an in-memory database (used in tests).
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
+        migrate(&conn)?;
         conn.execute_batch(SCHEMA).context("applying schema")?;
         Ok(Store { conn })
     }
@@ -494,32 +532,57 @@ impl Store {
         let now = now_rfc3339();
         self.conn.execute(
             "INSERT INTO prompt_compressions
-                (id, run_id, original_tokens, compressed_tokens, reduction_pct, original_prompt, final_prompt, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                (id, run_id, project_id, mode, original_token_estimate, compressed_token_estimate,
+                 estimated_reduction_percent, compressed_prompt_hash, original_prompt_stored,
+                 compressed_prompt_stored, preserved_constraints_json, removed_redundancy_json,
+                 original_prompt, compressed_prompt, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
-                id, new.run_id, new.original_tokens, new.compressed_tokens,
-                new.reduction_pct, new.original_prompt, new.final_prompt, now
+                id,
+                new.run_id,
+                new.project_id,
+                new.mode,
+                new.original_token_estimate,
+                new.compressed_token_estimate,
+                new.estimated_reduction_percent,
+                new.compressed_prompt_hash,
+                new.original_prompt_stored,
+                new.compressed_prompt_stored,
+                new.preserved_constraints_json,
+                new.removed_redundancy_json,
+                new.original_prompt,
+                new.compressed_prompt,
+                now
             ],
         )?;
-        Ok(PromptCompression {
-            id,
-            run_id: new.run_id.clone(),
-            original_tokens: new.original_tokens,
-            compressed_tokens: new.compressed_tokens,
-            reduction_pct: new.reduction_pct,
-            original_prompt: new.original_prompt.clone(),
-            final_prompt: new.final_prompt.clone(),
-            created_at: now,
-        })
+        self.prompt_compression_by_id(&id)?
+            .context("compression vanished after insert")
     }
 
     pub fn list_prompt_compressions(&self, limit: i64) -> Result<Vec<PromptCompression>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, run_id, original_tokens, compressed_tokens, reduction_pct, original_prompt, final_prompt, created_at
-             FROM prompt_compressions ORDER BY created_at DESC LIMIT ?1",
-        )?;
+        let mut stmt = self.conn.prepare(&format!(
+            "{PROMPT_COMPRESSION_SELECT} ORDER BY created_at DESC LIMIT ?1"
+        ))?;
         let rows = stmt.query_map(params![limit], map_prompt_compression)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn prompt_compression_by_id(&self, id: &str) -> Result<Option<PromptCompression>> {
+        self.conn
+            .query_row(
+                &format!("{PROMPT_COMPRESSION_SELECT} WHERE id = ?1"),
+                params![id],
+                map_prompt_compression,
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    pub fn delete_prompt_compression(&self, id: &str) -> Result<bool> {
+        let n = self
+            .conn
+            .execute("DELETE FROM prompt_compressions WHERE id = ?1", params![id])?;
+        Ok(n > 0)
     }
 
     // --- Aggregates -------------------------------------------------------
@@ -678,16 +741,28 @@ fn map_checkpoint(row: &rusqlite::Row) -> rusqlite::Result<Checkpoint> {
     })
 }
 
+const PROMPT_COMPRESSION_SELECT: &str = "SELECT id, run_id, project_id, mode, original_token_estimate, \
+    compressed_token_estimate, estimated_reduction_percent, compressed_prompt_hash, \
+    original_prompt_stored, compressed_prompt_stored, preserved_constraints_json, \
+    removed_redundancy_json, original_prompt, compressed_prompt, created_at FROM prompt_compressions";
+
 fn map_prompt_compression(row: &rusqlite::Row) -> rusqlite::Result<PromptCompression> {
     Ok(PromptCompression {
         id: row.get(0)?,
         run_id: row.get(1)?,
-        original_tokens: row.get(2)?,
-        compressed_tokens: row.get(3)?,
-        reduction_pct: row.get(4)?,
-        original_prompt: row.get(5)?,
-        final_prompt: row.get(6)?,
-        created_at: row.get(7)?,
+        project_id: row.get(2)?,
+        mode: row.get(3)?,
+        original_token_estimate: row.get(4)?,
+        compressed_token_estimate: row.get(5)?,
+        estimated_reduction_percent: row.get(6)?,
+        compressed_prompt_hash: row.get(7)?,
+        original_prompt_stored: row.get(8)?,
+        compressed_prompt_stored: row.get(9)?,
+        preserved_constraints_json: row.get(10)?,
+        removed_redundancy_json: row.get(11)?,
+        original_prompt: row.get(12)?,
+        compressed_prompt: row.get(13)?,
+        created_at: row.get(14)?,
     })
 }
 

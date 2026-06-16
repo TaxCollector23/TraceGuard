@@ -300,28 +300,43 @@ pub struct NewTestResult {
     pub output_summary: Option<String>,
 }
 
-/// A stored prompt-compression record. `final_prompt`/`original_prompt` are only
-/// populated when prompt history is enabled in the project config.
+/// A stored TraceCompress record. Prompt text columns are only populated when
+/// prompt history is enabled in the project config; otherwise only token
+/// estimates and metadata are kept. Nothing is ever uploaded.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptCompression {
     pub id: String,
     pub run_id: Option<String>,
-    pub original_tokens: i64,
-    pub compressed_tokens: i64,
-    pub reduction_pct: f64,
+    pub project_id: Option<String>,
+    pub mode: String,
+    pub original_token_estimate: i64,
+    pub compressed_token_estimate: i64,
+    pub estimated_reduction_percent: f64,
+    pub compressed_prompt_hash: String,
+    pub original_prompt_stored: bool,
+    pub compressed_prompt_stored: bool,
+    pub preserved_constraints_json: Option<String>,
+    pub removed_redundancy_json: Option<String>,
     pub original_prompt: Option<String>,
-    pub final_prompt: Option<String>,
+    pub compressed_prompt: Option<String>,
     pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewPromptCompression {
     pub run_id: Option<String>,
-    pub original_tokens: i64,
-    pub compressed_tokens: i64,
-    pub reduction_pct: f64,
+    pub project_id: Option<String>,
+    pub mode: String,
+    pub original_token_estimate: i64,
+    pub compressed_token_estimate: i64,
+    pub estimated_reduction_percent: f64,
+    pub compressed_prompt_hash: String,
+    pub original_prompt_stored: bool,
+    pub compressed_prompt_stored: bool,
+    pub preserved_constraints_json: Option<String>,
+    pub removed_redundancy_json: Option<String>,
     pub original_prompt: Option<String>,
-    pub final_prompt: Option<String>,
+    pub compressed_prompt: Option<String>,
 }
 
 /// Aggregated counts shown on a run card.

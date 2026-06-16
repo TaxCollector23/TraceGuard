@@ -5,7 +5,49 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+/// TraceCompress (prompt compression) settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptCompressionConfig {
+    /// Master switch for the compression feature.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Default mode: "normal" | "concise" | "bare".
+    #[serde(default = "default_mode")]
+    pub default_mode: String,
+    /// Store prompt text locally for history. Token estimates and metadata are
+    /// always stored; the raw prompt text is only stored when this is true.
+    /// Never uploaded regardless.
+    #[serde(default = "default_true")]
+    pub prompt_history: bool,
+    /// Allow opt-in external-LLM compression (off by default; would send prompt
+    /// text off the machine, so it must be explicit).
+    #[serde(default)]
+    pub external_llm: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_mode() -> String {
+    "concise".to_string()
+}
+
+impl Default for PromptCompressionConfig {
+    fn default() -> Self {
+        PromptCompressionConfig {
+            enabled: true,
+            default_mode: default_mode(),
+            prompt_history: true,
+            external_llm: false,
+        }
+    }
+}
+
 /// Project configuration. Kept intentionally small for the MVP.
+///
+/// Note: table fields (`prompt_compression`) must be serialized after all
+/// scalar/array fields, so it is declared last.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
     pub project_name: String,
@@ -13,17 +55,10 @@ pub struct ProjectConfig {
     pub protected_files: Vec<String>,
     #[serde(default = "default_checks")]
     pub default_checks: Vec<String>,
-    /// Whether to store original/final prompt text locally for compression
-    /// history. Tokens and reduction stats are always stored; the text is only
-    /// stored when this is true. Never uploaded regardless.
-    #[serde(default = "default_prompt_history")]
-    pub prompt_history: bool,
     #[serde(default)]
     pub created_at: String,
-}
-
-fn default_prompt_history() -> bool {
-    true
+    #[serde(default)]
+    pub prompt_compression: PromptCompressionConfig,
 }
 
 fn default_protected_files() -> Vec<String> {
@@ -46,8 +81,8 @@ impl ProjectConfig {
             project_name: project_name.into(),
             protected_files: default_protected_files(),
             default_checks: default_checks(),
-            prompt_history: default_prompt_history(),
             created_at: created_at.into(),
+            prompt_compression: PromptCompressionConfig::default(),
         }
     }
 
