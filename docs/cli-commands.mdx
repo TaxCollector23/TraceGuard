@@ -43,14 +43,30 @@ Git-based and asks for confirmation. Use `-y`/`--yes` to skip the prompt.
 
 ## `trg compress-prompt [text]`
 
-Compress a prompt locally before sending it to an agent. Omit the text to paste
+Compress a prompt locally with TraceCompress. Omit the text to paste
 interactively. See [Prompt Compression](/prompt-compression).
 
 | Flag | Description |
 | --- | --- |
-| `--budget` | Append an output-budget guidance block. |
-| `--target <n>` | Soft output token target for the budget block. |
+| `--mode <m>` | `normal` \| `concise` \| `bare`. Defaults to project config. |
+| `--output-budget <p>` | Append a budget block: `tiny` \| `short` \| `normal` \| `detailed`. |
 | `-y`, `--yes` | Accept without prompting. |
+
+## `trg run --compress <command>`
+
+Compress the agent prompt before running. Shows before/after and estimates, asks
+for confirmation, then runs with the compressed prompt and stores the metadata
+with the run. Use `--mode` to pick the compression mode.
+
+```bash
+trg run --compress "claude fix the login bug but do not rewrite the whole app"
+trg run --compress --mode bare "claude add tests for src/auth/login.ts"
+```
+
+## `trg update`
+
+Update the `trg` binary to the latest GitHub release. Homebrew installs are
+directed to `brew upgrade traceguard` instead.
 
 ## `trg daemon start | stop | status`
 

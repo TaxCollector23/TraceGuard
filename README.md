@@ -64,7 +64,9 @@ only). Roll back a run's changes with `trg rollback`.
 | `trg run <command>` | Run a command under monitoring (`--no-checks`, `-y`). |
 | `trg dashboard` | Start the daemon if needed and open the dashboard. |
 | `trg rollback` | Restore a checkpoint (Git-based, confirmed; `-y`). |
-| `trg compress-prompt [text]` | Compress a prompt locally (`--budget`, `--target`, `-y`). |
+| `trg compress-prompt [text]` | TraceCompress a prompt (`--mode normal\|concise\|bare`, `--output-budget`). |
+| `trg run --compress <command>` | Compress the agent prompt before a run. |
+| `trg update` | Update the `trg` binary to the latest release. |
 | `trg daemon start \| stop \| status` | Manage the local daemon. |
 | `trg --help` / `trg --version` | Help and version. |
 
@@ -88,7 +90,10 @@ fake data in production.
 - Build/test result recording and deterministic failure diagnosis
 - Rollback center backed by Git
 - Local SQLite history
-- Prompt Compressor and output-budget controls
+- **TraceCompress** — reduces redundant prompts and controls agent output
+  verbosity (Normal / Concise / Bare Mode) while preserving meaning and
+  constraints; deterministic and local-first with conflict detection and output
+  budgets
 
 ## Integrations
 
@@ -195,8 +200,25 @@ See [docs/security-model.mdx](docs/security-model.mdx).
   Git diffs.
 - Cost is "unavailable" unless usage is routed through a proxy or imported.
 - Rollback requires a Git repository.
+- TraceCompress token estimates may not be exact; compression can reduce clarity
+  if used carelessly; it warns on conflicting instructions; external-LLM
+  compression is opt-in only; output budgets are instructions unless the
+  provider supports hard limits.
 
 See [docs/limitations.mdx](docs/limitations.mdx).
+
+## Engineering decisions
+
+- **UI library:** the local dashboard uses a small custom CSS design system (no
+  runtime UI dependency). It is already a serious developer-tool layout;
+  Tailwind + shadcn/ui can be adopted later without changing the API.
+- **Diff viewer:** a custom unified-diff renderer (no heavy dependency).
+- **Tokenizer:** local heuristic estimate, clearly labelled; an exact tokenizer
+  (e.g. tiktoken) can be added opt-in.
+- **Analytics:** none on the landing site by default.
+- **Code signing:** not day-one; macOS/Windows may warn on downloaded binaries
+  until notarization/signing is added.
+- **License:** MIT.
 
 ## Roadmap
 
