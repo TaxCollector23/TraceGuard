@@ -52,8 +52,18 @@ const INSTALL: Record<OS, { name: string; icon: string; options: InstallOption[]
   },
 };
 
+/** Best-effort OS detection from the browser, for the recommended tab. */
+function detectOS(): OS {
+  if (typeof navigator === "undefined") return "macos";
+  const s = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
+  if (s.includes("win")) return "windows";
+  if (s.includes("mac")) return "macos";
+  if (s.includes("linux") || s.includes("x11")) return "linux";
+  return "macos";
+}
+
 export default function Download() {
-  const [os, setOs] = useState<OS>("macos");
+  const [os, setOs] = useState<OS>(detectOS);
   const active = INSTALL[os];
 
   return (
@@ -62,7 +72,7 @@ export default function Download() {
       <h2>Download the CLI</h2>
       <p className="muted">
         One binary, two commands: <code>trg</code> and <code>traceguard</code>.
-        Pick your platform.
+        Detected <b>{INSTALL[os].name}</b> — recommended below. All platforms shown.
       </p>
 
       <div className="dl">
