@@ -1,5 +1,7 @@
 # TraceGuard
 
+**Version 1.1 · local-first · MIT**
+
 **TraceGuard is a local black box recorder for AI coding agents.**
 
 TraceGuard shows what AI coding agents changed, what they ran, what they cost,

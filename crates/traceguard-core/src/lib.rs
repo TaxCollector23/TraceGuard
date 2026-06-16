@@ -3,6 +3,16 @@
 //! This crate is the single source of truth for behaviour shared between the
 //! `trg` CLI and the local daemon. It contains no I/O server code and no UI.
 
+/// The user-facing product version. Single source of truth for the CLI,
+/// daemon, dashboard, and docs. Bump this (and the workspace Cargo version)
+/// when the project owner advances to the next subversion.
+pub const VERSION: &str = "1.1";
+
+/// The exact string printed by `trg --version` / `traceguard --version`.
+pub fn version_string() -> String {
+    format!("TraceGuard {VERSION}")
+}
+
 pub mod config;
 pub mod cost;
 pub mod db;

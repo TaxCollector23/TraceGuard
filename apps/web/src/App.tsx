@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
 const links: [string, string][] = [
@@ -12,6 +13,14 @@ const links: [string, string][] = [
 ];
 
 export default function App() {
+  const [version, setVersion] = useState<string>("");
+  useEffect(() => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d) => setVersion(d.version ?? ""))
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="layout">
       <aside className="sidebar">
@@ -28,6 +37,7 @@ export default function App() {
         <div className="local-note">
           <span className="dot" /> Local only · 127.0.0.1
           <div className="local-sub">Your data never leaves this machine.</div>
+          {version && <div className="local-sub">TraceGuard v{version}</div>}
         </div>
       </aside>
       <main className="content">

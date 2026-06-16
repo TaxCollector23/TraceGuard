@@ -101,13 +101,18 @@ fn store(state: &AppState) -> MutexGuard<'_, Store> {
 // --- Health / state -------------------------------------------------------
 
 async fn health() -> impl IntoResponse {
-    Json(json!({ "status": "ok", "service": "traceguard-daemon" }))
+    Json(json!({
+        "status": "ok",
+        "service": "traceguard-daemon",
+        "version": traceguard_core::VERSION,
+    }))
 }
 
 async fn state_info(State(state): State<AppState>) -> ApiResult<impl IntoResponse> {
     let s = store(&state);
     let projects = s.list_projects()?;
     Ok(Json(json!({
+        "version": traceguard_core::VERSION,
         "port": state.port,
         "started_at": state.started_at,
         "db_path": state.db_path,

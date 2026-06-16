@@ -19,7 +19,9 @@ use commands::run::RunOptions;
 #[command(
     name = "trg",
     bin_name = "trg",
-    version,
+    // Version is handled manually (see `main`) so `--version` prints exactly
+    // "TraceGuard 1.1" for both the `trg` and `traceguard` binary names.
+    disable_version_flag = true,
     about = "TraceGuard — local black box recorder for AI coding agents.",
     long_about = "TraceGuard records what AI coding agents change, run, cost, and break, \
                   and helps you roll back. It is local-first: all data stays on your machine."
@@ -132,6 +134,15 @@ enum DaemonAction {
 }
 
 fn main() {
+    // Handle `--version` / `-V` manually so the output is exactly
+    // "TraceGuard 1.1" regardless of which binary name (trg or traceguard) was
+    // invoked. clap's built-in flag is disabled for this reason.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("{}", traceguard_core::version_string());
+        return;
+    }
+
     if let Err(e) = real_main() {
         eprintln!("error: {e:#}");
         std::process::exit(1);
