@@ -23,6 +23,13 @@ pub struct PromptCompressionConfig {
     /// text off the machine, so it must be explicit).
     #[serde(default)]
     pub external_llm: bool,
+    /// Default output-budget preset: tiny | short | normal | detailed.
+    #[serde(default = "default_output_budget")]
+    pub default_output_budget: String,
+}
+
+fn default_output_budget() -> String {
+    "short".to_string()
 }
 
 fn default_true() -> bool {
@@ -40,6 +47,7 @@ impl Default for PromptCompressionConfig {
             default_mode: default_mode(),
             prompt_history: true,
             external_llm: false,
+            default_output_budget: default_output_budget(),
         }
     }
 }

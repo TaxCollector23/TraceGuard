@@ -58,6 +58,36 @@ enum Commands {
     /// Open the local dashboard in your browser (starts the daemon if needed).
     Dashboard,
 
+    /// List recent runs.
+    Runs,
+
+    /// Show a run's summary and timeline.
+    Show { run_id: String },
+
+    /// Show the changed files for a run.
+    Patch { run_id: String },
+
+    /// Show guarded commands and secret warnings for a run.
+    Risks { run_id: String },
+
+    /// Show API usage and estimated cost for a run.
+    Costs { run_id: String },
+
+    /// List checkpoints across recent runs.
+    Checkpoints,
+
+    /// Show or change project configuration.
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+
+    /// List integrations or check what is live.
+    Integrations {
+        #[command(subcommand)]
+        action: Option<IntegrationsAction>,
+    },
+
     /// Roll back to the most recent checkpoint (Git-based, with confirmation).
     Rollback {
         /// Skip the confirmation prompt.
@@ -100,6 +130,20 @@ enum Commands {
     /// Internal: run the daemon server in the foreground (used by `daemon start`).
     #[command(name = "__serve", hide = true)]
     Serve,
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Print the current project config.
+    Show,
+    /// Set a config key (e.g. prompt_compression.default_mode bare).
+    Set { key: String, value: String },
+}
+
+#[derive(Subcommand)]
+enum IntegrationsAction {
+    /// Check what is live right now (daemon, GitHub token, …).
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -167,6 +211,20 @@ fn real_main() -> Result<()> {
             mode,
         }),
         Commands::Dashboard => commands::dashboard::run(),
+        Commands::Runs => commands::query::runs(),
+        Commands::Show { run_id } => commands::query::show(&run_id),
+        Commands::Patch { run_id } => commands::query::patch(&run_id),
+        Commands::Risks { run_id } => commands::query::risks(&run_id),
+        Commands::Costs { run_id } => commands::query::costs(&run_id),
+        Commands::Checkpoints => commands::query::checkpoints(),
+        Commands::Config { action } => match action {
+            ConfigAction::Show => commands::config_cmd::show(),
+            ConfigAction::Set { key, value } => commands::config_cmd::set(&key, &value),
+        },
+        Commands::Integrations { action } => match action {
+            Some(IntegrationsAction::Status) => commands::integrations::status(),
+            None => commands::integrations::list(),
+        },
         Commands::Rollback { yes } => commands::rollback::run(yes),
         Commands::CompressPrompt {
             prompt,
