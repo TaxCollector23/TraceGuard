@@ -1,15 +1,16 @@
-//! `trg compress-prompt` — locally and deterministically compress a prompt
-//! before you send it to an agent, reducing token usage while preserving
-//! constraints, commands, file names, and acceptance criteria.
+//! `trg compress-prompt` — TraceCompress: compress a prompt locally before
+//! sending it to an agent.
 //!
-//! Compression is local by default; no prompt text leaves the machine. Nothing
-//! is sent to any agent automatically — you review and accept the result.
+//! Compression is local and deterministic. Nothing is sent to any model, and
+//! nothing is sent to your agent automatically — you review and accept the
+//! result. Token counts are estimates and labelled as such.
 
 use std::io::{Read, Write};
 
 use anyhow::Result;
+use traceguard_core::ids::short_hash;
 use traceguard_core::models::NewPromptCompression;
-use traceguard_core::prompt::{self, OutputBudget};
+use traceguard_core::prompt::{self, CompressionMode, CompressionResult, OutputBudgetPreset};
 
 use crate::client::Client;
 use crate::daemon_ctl;
@@ -18,10 +19,10 @@ use crate::project;
 pub struct CompressOptions {
     /// Prompt text from the CLI; if empty, read from stdin (interactive paste).
     pub prompt: String,
-    /// Append an output-budget guidance block to the compressed prompt.
-    pub budget: bool,
-    /// Soft output token target to include in the budget block.
-    pub target: Option<usize>,
+    /// "normal" | "concise" | "bare". None → project default.
+    pub mode: Option<String>,
+    /// Optional output-budget preset: tiny | short | normal | detailed.
+    pub output_budget: Option<String>,
     /// Accept without prompting (non-interactive).
     pub yes: bool,
 }
@@ -32,77 +33,138 @@ pub fn run(opts: CompressOptions) -> Result<()> {
     } else {
         opts.prompt.clone()
     };
-
     if prompt_text.trim().is_empty() {
         println!("No prompt provided. Nothing to compress.");
         return Ok(());
     }
 
-    let result = prompt::compress(&prompt_text);
+    let mode = resolve_mode(opts.mode.as_deref());
+    let result = prompt::compress_with_mode(&prompt_text, mode);
 
-    let mut final_prompt = result.compressed.clone();
-    if opts.budget {
-        let budget = OutputBudget {
-            concise: true,
-            no_repeat_unchanged_code: true,
-            summarize_in_bullets: true,
-            only_show_changed_files: true,
-            no_full_files_unless_necessary: true,
-            ask_before_large_rewrites: true,
-            target_tokens: opts.target,
-        };
-        let block = budget.to_instruction_block();
-        if !block.is_empty() {
-            final_prompt = format!("{final_prompt}\n\n{block}");
-        }
+    print_result(&result, opts.output_budget.as_deref());
+
+    // Conflicts: warn and (if interactive) require acknowledgement.
+    if !result.conflicts.is_empty()
+        && !opts.yes
+        && !confirm("Proceed despite the conflict(s) above?")?
+    {
+        println!("Aborted. Resolve the conflicting instructions and try again.");
+        return Ok(());
     }
 
-    println!("\n── Compressed prompt ──");
-    println!("{final_prompt}");
-    println!("\n── Estimates (local, approximate) ──");
-    println!("  original:   ~{} tokens", result.original_tokens);
-    println!("  compressed: ~{} tokens", result.compressed_tokens);
-    println!("  reduction:  ~{:.0}%", result.reduction_pct);
-
-    // Accept / reject. Never auto-uses the prompt.
-    let accept = if opts.yes {
-        true
-    } else {
-        prompt_accept("Accept this compressed prompt?")?
-    };
+    let accept = opts.yes || confirm("Accept this compressed prompt?")?;
     if !accept {
         println!("Rejected. Original prompt left unchanged.");
         return Ok(());
     }
 
-    // Record stats locally (best-effort). Text only when prompt history is on.
-    record(&prompt_text, &final_prompt, &result);
-
+    record(&result, None);
     println!("\nAccepted. Copy the compressed prompt above into your agent.");
     Ok(())
 }
 
-fn record(original: &str, final_prompt: &str, result: &prompt::CompressionResult) {
-    // Determine whether to store prompt text. Default true; respect project config.
-    let store_text = project::load_current()
-        .map(|p| p.config.prompt_history)
-        .unwrap_or(true);
+/// Resolve the mode from a flag, or the project's configured default.
+pub fn resolve_mode(flag: Option<&str>) -> CompressionMode {
+    if let Some(m) = flag {
+        return CompressionMode::parse(m);
+    }
+    let default = project::load_current()
+        .map(|p| p.config.prompt_compression.default_mode)
+        .unwrap_or_else(|_| "concise".to_string());
+    CompressionMode::parse(&default)
+}
 
+/// Print the full TraceCompress result, optionally appending an output budget.
+pub fn print_result(result: &CompressionResult, output_budget: Option<&str>) {
+    println!("\n── Compressed prompt ({} mode) ──", result.mode);
+    println!("{}", result.compressed);
+
+    if let Some(preset) = output_budget {
+        let block = OutputBudgetPreset::parse(preset).to_instruction_block();
+        println!("\n{block}");
+    }
+
+    println!("\n── Response rules (attach to the agent prompt) ──");
+    println!("{}", result.response_rules);
+
+    println!("\n── Estimates (local, approximate) ──");
+    println!("  original:   ~{} tokens", result.original_tokens);
+    println!("  compressed: ~{} tokens", result.compressed_tokens);
+    println!("  reduction:  ~{:.0}%", result.reduction_pct);
+
+    if !result.preserved_constraints.is_empty() {
+        println!("\n── Preserved constraints ──");
+        for c in &result.preserved_constraints {
+            println!("  ✓ {c}");
+        }
+    }
+    if !result.removed_redundancy.is_empty() {
+        println!("\n── Removed redundancy ──");
+        for r in &result.removed_redundancy {
+            println!("  - {r}");
+        }
+    }
+    if !result.conflicts.is_empty() {
+        println!("\n⚠ Possible conflicts (resolve before relying on the compression):");
+        for c in &result.conflicts {
+            println!("  ! {c}");
+        }
+    }
+}
+
+/// Build a storable record, honoring the project's prompt-history setting.
+/// Token estimates and metadata are always stored; raw text only when enabled.
+pub fn build_record(result: &CompressionResult, run_id: Option<String>) -> NewPromptCompression {
+    let (project_id, store_text) = match project::load_current() {
+        Ok(p) => {
+            let pid = current_project_id(&p.root);
+            (pid, p.config.prompt_compression.prompt_history)
+        }
+        Err(_) => (None, true),
+    };
+
+    NewPromptCompression {
+        run_id,
+        project_id,
+        mode: result.mode.clone(),
+        original_token_estimate: result.original_tokens as i64,
+        compressed_token_estimate: result.compressed_tokens as i64,
+        estimated_reduction_percent: result.reduction_pct,
+        compressed_prompt_hash: short_hash(&result.compressed),
+        original_prompt_stored: store_text,
+        compressed_prompt_stored: store_text,
+        preserved_constraints_json: Some(
+            serde_json::to_string(&result.preserved_constraints).unwrap_or_default(),
+        ),
+        removed_redundancy_json: Some(
+            serde_json::to_string(&result.removed_redundancy).unwrap_or_default(),
+        ),
+        original_prompt: store_text.then(|| result.original.clone()),
+        compressed_prompt: store_text.then(|| result.compressed.clone()),
+    }
+}
+
+/// Persist a compression record to the daemon (best-effort).
+pub fn record(result: &CompressionResult, run_id: Option<String>) {
     let Ok(port) = daemon_ctl::ensure_running() else {
         return;
     };
     let client = Client::new(port);
     let _ = client.post(
-        "/api/prompt-compressions",
-        &NewPromptCompression {
-            run_id: None,
-            original_tokens: result.original_tokens as i64,
-            compressed_tokens: result.compressed_tokens as i64,
-            reduction_pct: result.reduction_pct,
-            original_prompt: store_text.then(|| original.to_string()),
-            final_prompt: store_text.then(|| final_prompt.to_string()),
-        },
+        "/api/prompt-compressor/record",
+        &build_record(result, run_id),
     );
+}
+
+fn current_project_id(root: &std::path::Path) -> Option<String> {
+    let port = daemon_ctl::running_port()?;
+    let client = Client::new(port);
+    let projects: Vec<traceguard_core::models::Project> = client.get_json("/api/projects").ok()?;
+    let target = root.display().to_string();
+    projects
+        .into_iter()
+        .find(|p| p.path == target)
+        .map(|p| p.id)
 }
 
 fn read_stdin_prompt() -> Result<String> {
@@ -112,8 +174,8 @@ fn read_stdin_prompt() -> Result<String> {
     Ok(buf)
 }
 
-fn prompt_accept(question: &str) -> Result<bool> {
-    print!("{question} [y] accept  [n] reject: ");
+fn confirm(question: &str) -> Result<bool> {
+    print!("{question} [y/N]: ");
     std::io::stdout().flush().ok();
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;

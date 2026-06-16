@@ -45,6 +45,12 @@ enum Commands {
         /// Auto-approve commands that would otherwise prompt.
         #[arg(short = 'y', long)]
         yes: bool,
+        /// Compress the agent prompt with TraceCompress before running.
+        #[arg(long)]
+        compress: bool,
+        /// Compression mode when --compress is set: normal | concise | bare.
+        #[arg(long)]
+        mode: Option<String>,
     },
 
     /// Open the local dashboard in your browser (starts the daemon if needed).
@@ -57,22 +63,25 @@ enum Commands {
         yes: bool,
     },
 
-    /// Compress a prompt locally before sending it to an agent.
+    /// Compress a prompt locally before sending it to an agent (TraceCompress).
     #[command(name = "compress-prompt")]
     CompressPrompt {
         /// The prompt text. Omit to paste interactively from stdin.
         #[arg(trailing_var_arg = true, num_args = 0..)]
         prompt: Vec<String>,
-        /// Append an output-budget guidance block to the compressed prompt.
+        /// Compression mode: normal | concise | bare. Defaults to project config.
         #[arg(long)]
-        budget: bool,
-        /// Soft output token target to include in the budget block.
+        mode: Option<String>,
+        /// Append an output-budget preset block: tiny | short | normal | detailed.
         #[arg(long)]
-        target: Option<usize>,
+        output_budget: Option<String>,
         /// Accept the compressed prompt without prompting.
         #[arg(short = 'y', long)]
         yes: bool,
     },
+
+    /// Update the trg binary to the latest GitHub release.
+    Update,
 
     /// Manage the local daemon.
     Daemon {
@@ -110,24 +119,29 @@ fn real_main() -> Result<()> {
             command,
             no_checks,
             yes,
+            compress,
+            mode,
         } => commands::run::run(RunOptions {
             command: command.join(" "),
             no_checks,
             yes,
+            compress,
+            mode,
         }),
         Commands::Dashboard => commands::dashboard::run(),
         Commands::Rollback { yes } => commands::rollback::run(yes),
         Commands::CompressPrompt {
             prompt,
-            budget,
-            target,
+            mode,
+            output_budget,
             yes,
         } => commands::compress::run(commands::compress::CompressOptions {
             prompt: prompt.join(" "),
-            budget,
-            target,
+            mode,
+            output_budget,
             yes,
         }),
+        Commands::Update => commands::update::run(),
         Commands::Daemon { action } => daemon_action(action),
         Commands::Serve => {
             // Foreground server inside the detached child process.

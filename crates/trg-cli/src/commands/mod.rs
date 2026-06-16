@@ -5,3 +5,4 @@ pub mod dashboard;
 pub mod init;
 pub mod rollback;
 pub mod run;
+pub mod update;

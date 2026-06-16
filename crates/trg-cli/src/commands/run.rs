@@ -29,14 +29,33 @@ pub struct RunOptions {
     pub no_checks: bool,
     /// Assume "yes" to approval prompts (non-interactive use).
     pub yes: bool,
+    /// Compress the agent prompt with TraceCompress before running.
+    pub compress: bool,
+    /// Compression mode for --compress.
+    pub mode: Option<String>,
 }
 
 pub fn run(opts: RunOptions) -> Result<()> {
     let project = project::load_current()?;
     let root = project.root.clone();
-    let command = opts.command.trim().to_string();
+    let mut command = opts.command.trim().to_string();
     if command.is_empty() {
         anyhow::bail!("no command provided to run");
+    }
+
+    // 0. Optional TraceCompress: compress the agent prompt before running.
+    // Never silently compress — the user sees before/after and confirms.
+    let mut compression: Option<traceguard_core::prompt::CompressionResult> = None;
+    if opts.compress {
+        match maybe_compress(&command, opts.mode.as_deref(), opts.yes)? {
+            Some((new_command, result)) => {
+                command = new_command;
+                compression = Some(result);
+            }
+            None => {
+                println!("Compression declined; running the original command.");
+            }
+        }
     }
 
     // 1. Guard the command before doing anything else.
@@ -78,6 +97,24 @@ pub fn run(opts: RunOptions) -> Result<()> {
         EventType::RunCreated,
         &format!("Run created for `{command}`"),
     );
+
+    // Persist compression metadata with the run (honoring prompt-history).
+    if let Some(ref result) = compression {
+        let _ = client.post(
+            "/api/prompt-compressor/record",
+            &crate::commands::compress::build_record(result, Some(run_id.clone())),
+        );
+        event(
+            &client,
+            &run_id,
+            EventType::Note,
+            &format!(
+                "TraceCompress ({} mode): ~{} → ~{} tokens (~{:.0}% reduction)",
+                result.mode, result.original_tokens, result.compressed_tokens, result.reduction_pct
+            ),
+        );
+    }
+
     if start_state.dirty {
         event(
             &client,
@@ -265,6 +302,44 @@ pub fn run(opts: RunOptions) -> Result<()> {
     print_summary(&command, exit_code, &changes, status);
     print_dashboard_hint(port);
     Ok(())
+}
+
+// --- TraceCompress integration -------------------------------------------
+
+/// Compress the agent-prompt portion of a command. Shows before/after and asks
+/// for confirmation (unless `assume_yes`). Returns the rebuilt command and the
+/// compression result, or `None` if there is nothing to compress / declined.
+fn maybe_compress(
+    command: &str,
+    mode_flag: Option<&str>,
+    assume_yes: bool,
+) -> Result<Option<(String, traceguard_core::prompt::CompressionResult)>> {
+    let (agent, prompt) = split_agent_prompt(command);
+    let Some(prompt_text) = prompt else {
+        println!("Nothing to compress (no agent prompt detected in the command).");
+        return Ok(None);
+    };
+
+    let mode = crate::commands::compress::resolve_mode(mode_flag);
+    let result = traceguard_core::prompt::compress_with_mode(&prompt_text, mode);
+    crate::commands::compress::print_result(&result, None);
+
+    if !result.conflicts.is_empty()
+        && !assume_yes
+        && !prompt_yes_no("Proceed despite the conflict(s) above?")?
+    {
+        return Ok(None);
+    }
+    if !assume_yes && !prompt_yes_no("Run the agent with this compressed prompt?")? {
+        return Ok(None);
+    }
+
+    // Rebuild the command: keep the agent, swap in the compressed prompt.
+    let rebuilt = match agent {
+        Some(a) => format!("{a} {}", result.compressed),
+        None => result.compressed.clone(),
+    };
+    Ok(Some((rebuilt, result)))
 }
 
 // --- Guard prompting ------------------------------------------------------
