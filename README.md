@@ -68,10 +68,28 @@ only). Roll back a run's changes with `trg rollback`.
 | `trg rollback` | Restore a checkpoint (Git-based, confirmed; `-y`). |
 | `trg compress-prompt [text]` | TraceCompress a prompt (`--mode normal\|concise\|bare`, `--output-budget`). |
 | `trg run --compress <command>` | Compress the agent prompt before a run. |
+| `trg guard "<prompt>"` | Harden a prompt: clean + rules + score + lint (`--mode`, `--coding`, `--project`, `--copy`, `--launch`). |
+| `trg agents` | List supported AI tools and whether each is installed. |
+| `trg launch <target> "<prompt>"` | Launch a prompt into a tool (CLI or web); `auto` to route. |
+| `trg use <target>` | Set the default launch target. |
+| `trg scan` | Detect the project's stack (package manager, framework, tests, git). |
+| `trg doctor` | System checks: toolchain, clipboard, daemon, agents, paths. |
+| `trg rules <list\|add\|clear>` | Manage custom hardening rules. |
 | `trg github <status\|commits\|pulls\|cat>` | Read directly from the repo (incl. private). |
 | `trg update` | Update the `trg` binary to the latest release. |
 | `trg daemon start \| stop \| status` | Manage the local daemon. |
 | `trg --help` / `trg --version` | Help and version. |
+
+### AI tool integrations (`trg launch` / `trg agents`)
+
+TraceGuard launches a cleaned/hardened prompt into many tools. CLI tools are
+detected and executed; web tools get the prompt on your clipboard plus the site
+opened (TraceGuard never claims it injected text into a web page). Supported ids
+include: `claude`, `codex`, `cursor`, `windsurf`, `aider`, `opencode`,
+`continue`, `copilot`, `gh`, `chatgpt`, `claude-web`, `gemini`, `perplexity`,
+`groq`, `openrouter`, `ollama`, `lmstudio`, `openwebui`, `localai`. Run
+`trg agents` to see which are installed on your machine; missing CLIs show the
+exact install command.
 
 ## Local dashboard
 

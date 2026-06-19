@@ -8,6 +8,7 @@ mod client;
 mod commands;
 mod daemon_ctl;
 mod project;
+mod settings;
 mod watcher;
 
 use anyhow::Result;
@@ -57,6 +58,61 @@ enum Commands {
 
     /// Open the local dashboard in your browser (starts the daemon if needed).
     Dashboard,
+
+    /// Harden a prompt: clean it, attach strict rules, score and lint it.
+    Guard {
+        /// The prompt text (quote multi-word prompts).
+        #[arg(required = true, trailing_var_arg = true, num_args = 1..)]
+        prompt: Vec<String>,
+        /// Hardening mode (minimal, balanced, strict, coding, research, …, no-bullshit).
+        #[arg(long)]
+        mode: Option<String>,
+        /// Apply the strict coding-agent rule set.
+        #[arg(long)]
+        coding: bool,
+        /// Detect the project and include its context.
+        #[arg(long)]
+        project: bool,
+        /// Copy the hardened prompt to the clipboard.
+        #[arg(long)]
+        copy: bool,
+        /// Launch the hardened prompt into a tool (e.g. claude, chatgpt, auto).
+        #[arg(long)]
+        launch: Option<String>,
+        /// Skip secret-scan confirmation.
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+
+    /// List supported AI tools and whether each is installed.
+    Agents,
+
+    /// Set the default launch target (e.g. `trg use claude`).
+    Use { target: String },
+
+    /// Launch a prompt into an AI tool (CLI or web). Use `auto` to auto-route.
+    Launch {
+        /// Target tool id, or `auto` (e.g. claude, chatgpt, cursor, auto).
+        target: String,
+        /// The prompt text.
+        #[arg(required = true, trailing_var_arg = true, num_args = 1..)]
+        prompt: Vec<String>,
+        /// Continue even if the prompt may contain secrets.
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+
+    /// Run system checks (toolchain, clipboard, daemon, agents, paths).
+    Doctor,
+
+    /// Scan the current project and print its detected stack.
+    Scan,
+
+    /// Manage custom hardening rules.
+    Rules {
+        #[command(subcommand)]
+        action: RulesAction,
+    },
 
     /// List recent runs.
     Runs,
@@ -177,6 +233,16 @@ enum DaemonAction {
     Status,
 }
 
+#[derive(Subcommand)]
+enum RulesAction {
+    /// List custom hardening rules.
+    List,
+    /// Add a custom hardening rule.
+    Add { rule: String },
+    /// Remove all custom rules.
+    Clear,
+}
+
 fn main() {
     // Handle `--version` / `-V` manually so the output is exactly
     // "TraceGuard 1.1" regardless of which binary name (trg or traceguard) was
@@ -211,6 +277,41 @@ fn real_main() -> Result<()> {
             mode,
         }),
         Commands::Dashboard => commands::dashboard::run(),
+        Commands::Guard {
+            prompt,
+            mode,
+            coding,
+            project,
+            copy,
+            launch,
+            yes,
+        } => commands::harden_cmd::run(commands::harden_cmd::GuardOptions {
+            prompt: prompt.join(" "),
+            mode,
+            coding,
+            project,
+            copy,
+            launch,
+            yes,
+        }),
+        Commands::Agents => commands::launch::agents(),
+        Commands::Use { target } => commands::launch::use_target(&target),
+        Commands::Launch {
+            target,
+            prompt,
+            yes,
+        } => commands::launch::launch(commands::launch::LaunchOptions {
+            target: Some(target),
+            prompt: prompt.join(" "),
+            yes,
+        }),
+        Commands::Doctor => commands::doctor::run(),
+        Commands::Scan => commands::scan_cmd::run(),
+        Commands::Rules { action } => commands::harden_cmd::rules(match action {
+            RulesAction::List => commands::harden_cmd::RulesAction::List,
+            RulesAction::Add { rule } => commands::harden_cmd::RulesAction::Add(rule),
+            RulesAction::Clear => commands::harden_cmd::RulesAction::Clear,
+        }),
         Commands::Runs => commands::query::runs(),
         Commands::Show { run_id } => commands::query::show(&run_id),
         Commands::Patch { run_id } => commands::query::patch(&run_id),

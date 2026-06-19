@@ -46,6 +46,11 @@ pub fn router() -> Router<AppState> {
         )
         .route("/runs/:id/rollback", post(rollback))
         .route("/check-command", post(check_command))
+        // Prompt hardening + agent hub
+        .route("/guard", post(guard_prompt))
+        .route("/agents", get(list_agents))
+        .route("/scan", post(scan_project))
+        .route("/doctor", get(doctor))
         // GitHub (reads directly from the repo, including private)
         .route("/github/status", get(gh_status))
         .route("/github/commits", get(gh_commits))
@@ -446,6 +451,74 @@ async fn check_command(Json(body): Json<CheckCommandBody>) -> impl IntoResponse 
     Json(json!({
         "decision": result.decision.as_str(),
         "reason": result.reason,
+    }))
+}
+
+// --- Prompt hardening + agent hub -----------------------------------------
+
+#[derive(Deserialize)]
+struct GuardBody {
+    prompt: String,
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default)]
+    coding: bool,
+    #[serde(default)]
+    project_context: Option<String>,
+    #[serde(default)]
+    custom_rules: Vec<String>,
+}
+
+/// Harden a prompt (clean + rules + score + lint). Stateless; local.
+async fn guard_prompt(Json(body): Json<GuardBody>) -> impl IntoResponse {
+    use traceguard_core::harden::{harden, HardenMode};
+    let mode = match (body.mode.as_deref(), body.coding) {
+        (Some(m), _) => HardenMode::parse(m),
+        (None, true) => HardenMode::Coding,
+        (None, false) => HardenMode::Balanced,
+    };
+    let result = harden(
+        &body.prompt,
+        mode,
+        body.project_context.as_deref(),
+        &body.custom_rules,
+    );
+    Json(result)
+}
+
+/// List supported AI tools and their install status.
+async fn list_agents() -> impl IntoResponse {
+    Json(traceguard_core::agents::detect_all())
+}
+
+#[derive(Deserialize)]
+struct ScanBody {
+    /// Project directory to scan. Defaults to the daemon's working directory.
+    #[serde(default)]
+    path: Option<String>,
+}
+
+async fn scan_project(Json(body): Json<ScanBody>) -> impl IntoResponse {
+    let root = body
+        .path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    Json(traceguard_core::scan::scan(&root))
+}
+
+/// Lightweight doctor: version, agents detected, clipboard availability.
+async fn doctor(State(state): State<AppState>) -> impl IntoResponse {
+    let agents = traceguard_core::agents::detect_all();
+    let installed = agents.iter().filter(|a| a.installed).count();
+    let clipboard = traceguard_core::agents::copy_to_clipboard("").is_ok();
+    Json(json!({
+        "version": traceguard_core::VERSION,
+        "port": state.port,
+        "db_path": state.db_path,
+        "clipboard": clipboard,
+        "agents_total": agents.len(),
+        "agents_installed": installed,
+        "agents": agents,
     }))
 }
 

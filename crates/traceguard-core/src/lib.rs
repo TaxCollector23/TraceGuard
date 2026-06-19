@@ -13,6 +13,7 @@ pub fn version_string() -> String {
     format!("TraceGuard {VERSION}")
 }
 
+pub mod agents;
 pub mod config;
 pub mod cost;
 pub mod db;
@@ -20,10 +21,12 @@ pub mod diagnose;
 pub mod git;
 pub mod github;
 pub mod guard;
+pub mod harden;
 pub mod ids;
 pub mod models;
 pub mod paths;
 pub mod prompt;
+pub mod scan;
 pub mod secrets;
 pub mod time;
 
