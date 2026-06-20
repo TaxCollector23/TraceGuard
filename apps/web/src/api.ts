@@ -202,9 +202,34 @@ export interface CompressionRecord {
   created_at: string;
 }
 
+export interface AgentStatus {
+  id: string;
+  name: string;
+  surface: string;
+  category: string;
+  installed: boolean;
+  version: string | null;
+  url: string | null;
+  install_hint: string | null;
+}
+
+export interface LaunchOutcome {
+  method: string;
+  agent?: string;
+  launched: boolean;
+  copied?: boolean;
+  url?: string | null;
+  command?: string | null;
+  message: string;
+  secrets?: string[];
+}
+
 export const api = {
   dashboard: () => get<DashboardData>("/dashboard"),
   diff: (id: string) => get<{ diff: string }>(`/runs/${id}/diff`),
+  agents: () => get<AgentStatus[]>("/agents"),
+  launch: (target: string, prompt: string) =>
+    post<LaunchOutcome>("/launch", { target, prompt }),
   compressPrompt: (prompt: string, mode: string) =>
     post<CompressionResult>("/prompt-compressor/compress", { prompt, mode }),
   outputBudget: (preset: string) =>

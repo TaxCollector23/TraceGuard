@@ -199,5 +199,8 @@ td.mono, .mono { font-family: var(--mono); }
 .mode-card:hover { border-color: var(--green-dim); }
 .mode-card.active { border-color: var(--green); background: var(--bg-elev-2); }
 .btn-row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.launch-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.run-picker-select { background: var(--bg-elev-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; font-size: 13.5px; font-family: var(--sans); min-width: 280px; }
+.run-picker-select:focus { outline: none; border-color: var(--green); }
 .check-list { list-style: none; padding-left: 0; margin: 6px 0; }
 .check-list li { padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--border-soft); }

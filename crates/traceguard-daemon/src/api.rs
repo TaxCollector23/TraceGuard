@@ -49,6 +49,7 @@ pub fn router() -> Router<AppState> {
         // Prompt hardening + agent hub
         .route("/guard", post(guard_prompt))
         .route("/agents", get(list_agents))
+        .route("/launch", post(launch_agent))
         .route("/scan", post(scan_project))
         .route("/doctor", get(doctor))
         // GitHub (reads directly from the repo, including private)
@@ -489,6 +490,37 @@ async fn guard_prompt(Json(body): Json<GuardBody>) -> impl IntoResponse {
 /// List supported AI tools and their install status.
 async fn list_agents() -> impl IntoResponse {
     Json(traceguard_core::agents::detect_all())
+}
+
+#[derive(Deserialize)]
+struct LaunchBody {
+    target: String,
+    prompt: String,
+    #[serde(default)]
+    cwd: Option<String>,
+}
+
+/// Launch a prompt into an agent. `auto` routes to the best installed tool.
+/// Web tools open + copy; CLI tools (Claude, etc.) open a new terminal running
+/// them with the prompt. Secrets are scanned first.
+async fn launch_agent(Json(body): Json<LaunchBody>) -> impl IntoResponse {
+    let findings = traceguard_core::secrets::scan_text(&body.prompt);
+    if !findings.is_empty() {
+        return Json(json!({
+            "method": "blocked",
+            "launched": false,
+            "message": "Prompt may contain secrets — remove them before launching.",
+            "secrets": findings.iter().map(|f| f.secret_type.clone()).collect::<Vec<_>>(),
+        }));
+    }
+    let target = if body.target == "auto" {
+        traceguard_core::agents::route(&body.prompt).to_string()
+    } else {
+        body.target.clone()
+    };
+    let outcome =
+        traceguard_core::agents::launch_detached(&target, &body.prompt, body.cwd.as_deref());
+    Json(serde_json::to_value(outcome).unwrap_or(json!({"method":"error"})))
 }
 
 #[derive(Deserialize)]
