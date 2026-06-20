@@ -8,7 +8,8 @@
   --green: #3fb950;
   --accent: #4493f8;
   --purple: #bc8cff;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sidebar-w: 280px;
   --toc-w: 240px;
 }
@@ -19,9 +20,10 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  font-size: 15.5px;
-  line-height: 1.7;
+  font-family: var(--sans);
+  font-size: 16.5px;
+  line-height: 1.78;
+  -webkit-font-smoothing: antialiased;
 }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -69,18 +71,20 @@ nav a.active { color: var(--text); background: #15202c; box-shadow: inset 2px 0 
 .side-foot a { color: var(--text-dim); font-size: 13px; }
 
 /* ---------- Content ---------- */
-.content { padding: 44px 52px; min-width: 0; }
+.content { padding: 48px 56px; min-width: 0; display: flex; justify-content: center; }
+.content > * { width: 100%; max-width: 760px; }
 .eyebrow { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--green); font-weight: 700; }
-.doc-title { font-size: 38px; line-height: 1.15; margin: 8px 0 8px; letter-spacing: -0.5px; }
-.doc-desc { font-size: 18px; color: var(--text-dim); margin: 0 0 28px; }
+.doc-title { font-size: 40px; line-height: 1.12; margin: 10px 0 10px; letter-spacing: -0.8px; font-weight: 800; }
+.doc-desc { font-size: 19px; color: var(--text-dim); margin: 0 0 32px; line-height: 1.5; }
 
-.prose h2 { font-size: 25px; margin: 40px 0 12px; padding-top: 10px; border-top: 1px solid var(--border); letter-spacing: -0.3px; }
-.prose h3 { font-size: 19px; margin: 26px 0 8px; }
-.prose h4 { font-size: 16px; margin: 20px 0 6px; color: var(--purple); }
-.prose p { margin: 12px 0; }
-.prose ul, .prose ol { padding-left: 22px; }
-.prose li { margin: 6px 0; }
-.prose strong { color: #fff; }
+.prose h2 { font-size: 26px; margin: 46px 0 14px; padding-top: 16px; border-top: 1px solid var(--border); letter-spacing: -0.4px; font-weight: 700; }
+.prose h3 { font-size: 20px; margin: 30px 0 10px; font-weight: 700; }
+.prose h4 { font-size: 16.5px; margin: 22px 0 6px; color: var(--purple); }
+.prose p { margin: 15px 0; }
+.prose ul, .prose ol { padding-left: 24px; }
+.prose li { margin: 8px 0; }
+.prose li::marker { color: var(--green); }
+.prose strong { color: #fff; font-weight: 650; }
 
 .prose blockquote {
   margin: 16px 0; padding: 12px 16px; border-radius: 10px;
